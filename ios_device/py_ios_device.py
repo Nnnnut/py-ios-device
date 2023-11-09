@@ -14,11 +14,14 @@ from ios_device.util.api_util import PyIOSDeviceException, RunXCUITest
 from ios_device.util.forward import ForwardPorts
 from ios_device.util.kperf_data import KperfData
 from ios_device.util.utils import kperf_data
+from ios_device.util import Log
+
+nutL = Log.getLogger('Nut')
 
 
 class PyiOSDevice:
     def __init__(self, device_id: str = None, rpc_channel: InstrumentServer = None):
-        self.device_id = device_id
+        self.device_id = device_id # == None
         self.xcuitest = None
         self.rpc_channel = None
         if not rpc_channel or not rpc_channel._cli:
@@ -28,7 +31,7 @@ class PyiOSDevice:
 
     def init(self):
         if not self.rpc_channel:
-            self.rpc_channel = init(self.device_id)
+            self.rpc_channel = init(self.device_id) # self.device_id == None return 了一个InstrumentServer 或 DTXServer
 
     def get_processes(self):
         return get_processes(self.device_id, self.rpc_channel)
@@ -199,7 +202,7 @@ class PyiOSDevice:
 
 
 def init(device_id: str = None):
-    rpc_channel = InstrumentServer(udid=device_id)
+    rpc_channel = InstrumentServer(udid=device_id) # device_id == None return了一个啥呀？InstrumentServer(DTXServer)
     rpc_channel.init()
     return rpc_channel
 
@@ -473,7 +476,7 @@ def start_get_fps(device_id: str = None, rpc_channel: InstrumentServer = None, c
         raise PyIOSDeviceException("callback can not be None")
 
     if not rpc_channel:
-        _rpc_channel = init(device_id)
+        _rpc_channel = init(device_id) # device_id == None
     else:
         _rpc_channel = rpc_channel
 

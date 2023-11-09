@@ -55,12 +55,12 @@ class LockdownClient:
             cache_dir: str = '.cache/pymobiledevice',
             network=None
     ):
-        self.network = network
-        self.cache_dir = cache_dir
+        self.network = network # None
+        self.cache_dir = cache_dir # '.cache/pymobiledevice'
         self.record = None  # type: Optional[Dict[str, Any]]
         self.sslfile = None
         self.session_id = None
-        self.host_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, platform.node())).upper()
+        self.host_id = str(uuid.uuid3(uuid.NAMESPACE_DNS, platform.node())).upper() # BBA604E5-A56A-3EE9-A773-EC1149E452D2
         self.svc = PlistService(62078, udid, device, network=network)
         self.udid = self.svc.device.serial
         self.device = device
@@ -73,20 +73,20 @@ class LockdownClient:
         log.info(f"Connecting Device {self.svc.device.serial} ")
 
     def _verify_query_type(self):
-        query_type = self.svc.plist_request({'Request': 'QueryType'}).get('Type')
+        query_type = self.svc.plist_request({'Request': 'QueryType'}).get('Type') # return 'com.apple.mobile.lockdown'
         if query_type != 'com.apple.mobile.lockdown':
             raise InitializationError(f'Unexpected {query_type}')
 
     @cached_property
     def identifier(self):
         if self.udid:
-            return self.udid
+            return self.udid # return 3bfcd8ac17717d724af3570d2c6e270b42a9e858
         elif self.unique_chip_id:
             return f'{self.unique_chip_id:x}'
         raise InitializationError('Unable to determine UDID or ECID - failing')
 
     def _pair(self):
-        if self._validate_pairing():
+        if self._validate_pairing(): # True，从iTunes路径获取ssl key，接着拿key发送StartSession的plist，获取返回的SeesionID，如果支持SessionSSL则接着把sock转换成ssl sock
             return True
         self.pair_full()
         self.svc.close()
@@ -96,8 +96,8 @@ class LockdownClient:
         raise FatalPairingError
 
     def _get_pair_record(self) -> Optional[Dict[str, Any]]:
-        lockdown_path = _get_lockdown_dir()
-        itunes_lockdown_path = lockdown_path.joinpath(f'{self.identifier}.plist')
+        lockdown_path = _get_lockdown_dir() # return Path(C:\ProgramData/Apple/Lockdown/)
+        itunes_lockdown_path = lockdown_path.joinpath(f'{self.identifier}.plist') # C:\ProgramData\Apple\Lockdown\3bfcd8ac17717d724af3570d2c6e270b42a9e858.plist
         try:  # 如果没有 lockdown 权限，则使用自有缓存证书，建议开启 lockdown 权限，避免重复认证
             if itunes_lockdown_path.exists():
                 log.debug(f'Using iTunes pair record: {itunes_lockdown_path}')
@@ -112,7 +112,7 @@ class LockdownClient:
 
 
     def _validate_pairing(self):
-        pair_record = self._get_pair_record() or {}
+        pair_record = self._get_pair_record() or {} # 读取并返回`C:\ProgramData\Apple\Lockdown\3bfcd8ac17717d724af3570d2c6e270b42a9e858.plist`，这是iTunes的匹配记录
         self.record = pair_record
         if self.ios_version < LooseVersion('11.0'):  # 11 以下需要双向认证
             resp = self._plist_request('ValidatePair', PairRecord=pair_record)
@@ -138,9 +138,9 @@ class LockdownClient:
                 self.sslfile = get_home_path(self.cache_dir,f'{self.identifier}.pem')
 
             else:
-                self.sslfile = write_home_file(
-                    self.cache_dir,
-                    f'{self.identifier}.pem',
+                self.sslfile = write_home_file( # 往"C:\Users\blue2\.cache\pymobiledevice\3bfcd8ac17717d724af3570d2c6e270b42a9e858.pem"中，写入第三个参数的字符串
+                    self.cache_dir, # '.cache/pymobiledevice'
+                    f'{self.identifier}.pem', # '3bfcd8ac17717d724af3570d2c6e270b42a9e858.pem'
                     pair_record['HostCertificate'] + b'\n' + pair_record['HostPrivateKey']
                 )
             try:
@@ -250,15 +250,18 @@ class LockdownClient:
             raise ValueError('Name must be a valid string')
 
         escrow_bag = self.record['EscrowBag'] if escrow_bag is True else escrow_bag
-        resp = self._plist_request('StartService', Service=name, EscrowBag=escrow_bag)
+        resp = self._plist_request('StartService', Service=name, EscrowBag=escrow_bag) # Service="com.apple.instruments.remoteserver.DVTSecureSocketProxy", EscrowBag=None
         if not resp:
+            log.info(f'raise StartServiceError')
             raise StartServiceError(f'Unable to start service={name!r}')
         elif resp.get('Error'):
             if resp.get('Error') == 'PasswordProtected':
+                log.info(f'raise StartServiceError')
                 raise StartServiceError(f'Unable to start service={name!r} - a password must be entered on the device')
             error = resp.get('Error')
             if self.ios_version >= LooseVersion('16.0'):
                 log.info('try `pyidevice enable_developer_mode`')
+            log.info(f'raise StartServiceError')
             raise StartServiceError(f'Unable to start service={name!r} - {error}')
         log.debug(f'connect port: {resp.get("Port")}')
         plist_service = PlistService(
@@ -340,15 +343,16 @@ class LockdownClient:
             pass
 
         with self._request_developer_image_dir() as _dir:  # , signature_path:
-            image_path = os.path.join(_dir, "DeveloperDiskImage.dmg")
+            image_path = os.path.join(_dir, "DeveloperDiskImage.dmg") # _dir = C:\Users\blue2\AppData\Local\Temp\tmprjvd8_tm\16.3\
             signature_path = image_path + ".signature"
             self.imagemounter.mount(image_path, signature_path)
             log.info("DeveloperImage mounted successfully")
 
     def start_service(self, name: str, escrow_bag=None) -> PlistService:
         try:
-            return self._start_service(name, escrow_bag)
+            return self._start_service(name, escrow_bag) # name "com.apple.instruments.remoteserver.DVTSecureSocketProxy"
         except StartServiceError:
+            log.info(f'except StartServiceError')
             self.mount_developer_image()
             time.sleep(.5)
             return self._start_service(name, escrow_bag)
@@ -382,7 +386,7 @@ def read_home_file(foldername: str, filename: str) -> Optional[bytes]:
 
 def write_home_file(foldername: str, filename: str, data: bytes) -> str:
     path = get_home_path(foldername, filename)
-    log.debug(f'save path :{path}')
+    log.debug(f'save path :{path}') # C:\Users\blue2\.cache\pymobiledevice\3bfcd8ac17717d724af3570d2c6e270b42a9e858.pem
     with path.open('wb') as f:
         f.write(data)
     return path.as_posix()
@@ -390,6 +394,6 @@ def write_home_file(foldername: str, filename: str, data: bytes) -> str:
 
 def _get_lockdown_dir():
     if sys.platform == 'win32':
-        return Path(os.environ['ALLUSERSPROFILE'] + '/Apple/Lockdown/')
+        return Path(os.environ['ALLUSERSPROFILE'] + '/Apple/Lockdown/') # C:\ProgramData/Apple/Lockdown/
     else:
         return Path('/var/db/lockdown/')

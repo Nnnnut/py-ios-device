@@ -32,26 +32,27 @@ class MuxDevice:
         return f'serial:{self.serial}, ConnectionType:{self.connection_type}'
 
     def connect(self, port):
+        log.info(f'MuxDevice.connect(port = {port})')
         connector = MuxConnection(self._socket_path, self._proto_cls)
         return connector.connect(self.device_id, port)
 
 
 class MuxConnection:
     def __init__(self, socketpath, protoclass):
-        self.socketpath = socketpath
-        if sys.platform in ('win32', 'cygwin'):
+        self.socketpath = socketpath # '/var/run/usbmuxd'
+        if sys.platform in ('win32', 'cygwin'): # win32
             family = socket.AF_INET
             address = ('127.0.0.1', 27015)
         else:
             family = socket.AF_UNIX
             address = self.socketpath
-        self.socket = SafeStreamSocket(address, family)
-        self.proto = protoclass(self.socket)
+        self.socket = SafeStreamSocket(address, family) # ('127.0.0.1', 27015), socket.AF_INET
+        self.proto = protoclass(self.socket) # PlistProtocol
         self.pkttag = 1
         self.devices = []  # type: List[MuxDevice]
 
     def _getreply(self):
-        resp, tag, data = self.proto.getpacket()
+        resp, tag, data = self.proto.getpacket() # '', 8, {'DeviceList': []}
         return tag, data
 
     def _processpacket(self):
@@ -75,10 +76,10 @@ class MuxConnection:
             raise MuxError('Invalid packet type received: %d' % resp)
 
     def exchange(self, req, payload=None):
-        mytag = self.pkttag
+        mytag = self.pkttag # self.pkttag = 1, in __init__()
         self.pkttag += 1
-        self.proto.sendpacket(req, mytag, payload or {})
-        recvtag, data = self._getreply()
+        self.proto.sendpacket(req, mytag, payload or {}) # self.proto = PlistProtocol(self.socket), in __init__()
+        recvtag, data = self._getreply() # 8, {'DeviceList': []}
         if recvtag != mytag:
             raise MuxError('Reply tag mismatch: expected %d, got %d' % (mytag, recvtag))
         return data
@@ -99,8 +100,10 @@ class MuxConnection:
             self._processpacket()
 
     def connect(self, device, port) -> socket.socket:
+        exchange_payload = {'DeviceID': device, 'PortNumber': ((port & 0xFF) << 8) | (port >> 8)}
+
         ret = self.exchange(
-            self.proto.TYPE_CONNECT, {'DeviceID': device, 'PortNumber': ((port & 0xFF) << 8) | (port >> 8)}
+            self.proto.TYPE_CONNECT, exchange_payload
         )
         if ret['Number'] != 0:
             raise MuxError('Connect failed: error %d' % ret['Number'])
@@ -108,8 +111,8 @@ class MuxConnection:
         return self.socket.sock
 
     def close(self):
+        self.socket.close()
         log.debug("Socket %r closed", self)
-        self.socket.sock.close()
 
     def __exit__(self, *args):
         self.close()
@@ -117,8 +120,8 @@ class MuxConnection:
 
 class USBMux:
     def __init__(self, socket_path=None):
-        socket_path = socket_path or '/var/run/usbmuxd'
-        self.socketpath = socket_path
+        socket_path = socket_path or '/var/run/usbmuxd' # socket_path == None
+        self.socketpath = socket_path # /var/run/usbmuxd
         self.listener = MuxConnection(socket_path, PlistProtocol)
         # self.listener.listen()
         self.protoclass = PlistProtocol
@@ -135,7 +138,7 @@ class USBMux:
         self.listener.process(timeout)
 
     def find_device(self, serial=None, network=None) -> MuxDevice:
-        self.get_devices(network)
+        self.get_devices(network) # return to self.devices
         for device in self.devices:
             if serial:
                 if device.device['Properties']['SerialNumber'] == serial:
@@ -152,15 +155,15 @@ class USBMux:
             "ClientVersionString": "libusbmuxd 1.1.0",
             "kLibUSBMuxVersion": 3,
         }
-        devices = self.listener.exchange('ListDevices', payload)
+        devices = self.listener.exchange('ListDevices', payload) # self.listener = MuxConnection(socket_path, PlistProtocol), return: {'DeviceList': []}
         for device in devices.get('DeviceList'):
             if not network and device['Properties']['ConnectionType'] == 'Network':
                 continue
             self.devices.append(
                 MuxDevice(
-                    self.listener.proto.__class__,
-                    self.socketpath,
-                    device,
+                    self.listener.proto.__class__, # <class 'ios_device.util.usbmux.PlistProtocol'>
+                    self.socketpath, # /var/run/usbmuxd
+                    device, # {'DeviceID': 8, 'MessageType': 'Attached', 'Properties': {'ConnectionType': 'USB', 'DeviceID': 8, 'LocationID': 0, 'ProductID': 4776, 'SerialNumber': '3bfcd8ac17717d724af3570d2c6e270b42a9e858', 'UDID': '3bfcd8ac17717d724af3570d2c6e270b42a9e858'}}
                 )
             )
         return self.devices
@@ -285,19 +288,19 @@ class BinaryProtocol:
             raise MuxError('Mux is connected, cannot issue control packets')
         length = 16 + len(payload)
         data = struct.pack('IIII', length, self.VERSION, req, tag) + payload
-        log.debug(f'发送 Plist byte: {data}')
+        # log.debug(f'发送 Plist byte: {data}')
         self.socket.send(data)
 
     def getpacket(self) -> Tuple[int, int, Union[Dict[str, Any], bytes]]:
         if self.connected:
             raise MuxError('Mux is connected, cannot issue control packets')
-        dlen = self.socket.recv(4)
-        dlen = struct.unpack('I', dlen)[0]
+        dlen = self.socket.recv(4) # socket.recv(bufsize[, flags]) return b'\xed\x00\x00\x00'
+        dlen = struct.unpack('I', dlen)[0] # == 237 == 0xED
         body = self.socket.recv(dlen - 4)
-        version, resp, tag = struct.unpack('III', body[:0xc])
-        if version != self.VERSION:
+        version, resp, tag = struct.unpack('III', body[:0xc]) # 1, 8, 1
+        if version != self.VERSION: # version == 1, PlistProtocol.VERSION == 1
             raise MuxVersionError('Version mismatch: expected %d, got %d' % (self.VERSION, version))
-        payload = self._unpack(resp, body[0xc:])
+        payload = self._unpack(resp, body[0xc:]) # PlistProtocol._unpack(): 直接return body[0xc:]
         return resp, tag, payload
 
 
@@ -318,23 +321,25 @@ class PlistProtocol(BinaryProtocol):
         return payload
 
     def sendpacket(self, req, tag, payload: Optional[Mapping[str, Any]] = None):
-        payload = payload or {}
+        payload = payload or {} # payload = {"MessageType": "ListDevices", "ClientVersionString": "libusbmuxd 1.1.0", "kLibUSBMuxVersion": 3,}
         payload['ClientVersionString'] = 'qt4i-usbmuxd'
         if isinstance(req, int):
             req = [self.TYPE_CONNECT, self.TYPE_LISTEN, self.TYPE_DEVICE_LIST][req - 2]
-        payload['MessageType'] = req
+        payload['MessageType'] = req # 'ListDevices'
         payload['ProgName'] = 'tcprelay'
-        log.debug(f'发送 Plist: {payload}')
+        log.debug(f'发送 Plist: {payload}') # payload = {"MessageType": "ListDevices", "ClientVersionString": "qt4i-usbmuxd", "kLibUSBMuxVersion": 3, "ProgName" = "tcprelay"}
+        log.info(f'发送 Plist: {payload}')
         wrapped_payload = plistlib.dumps(payload)
-        super().sendpacket(self.TYPE_PLIST, tag, wrapped_payload)
+        super().sendpacket(self.TYPE_PLIST, tag, wrapped_payload) # 8, 1, payload
 
     def getpacket(self):
-        resp, tag, payload = super().getpacket()
-        log.debug(f'接收 Plist byte: {payload}')
+        resp, tag, payload = super().getpacket() # 8, 1, ListDevices的Plist
+        # log.debug(f'接收 Plist byte: {payload}')
         if resp != self.TYPE_PLIST:
             raise MuxError('Received non-plist type %d' % resp)
-        payload = plistlib.loads(payload)
+        payload = plistlib.loads(payload) # 从plist解析成dict， {'DeviceList': []}
         log.debug(f'接收 Plist: {payload}')
+        log.info(f'接收 Plist: {payload}')
         return payload.get('MessageType', ''), tag, payload
 
 
@@ -360,3 +365,6 @@ class SafeStreamSocket:
                 raise MuxError('socket connection broken')
             msg = msg + chunk
         return msg
+    
+    def close(self):
+        self.sock.close()

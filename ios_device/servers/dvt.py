@@ -10,6 +10,7 @@ from ..util.exceptions import MuxError
 from ..util.variables import LOG
 
 log = Log.getLogger(LOG.Instrument.value)
+nutL = Log.getLogger('Nut')
 
 
 class DTXEnum(str, enum.Enum):
@@ -99,6 +100,7 @@ class DTXServer:
         def _notifyOfPublishedCapabilities(res):
             self.done.set()
             self._published_capabilities = res.auxiliaries
+            # nutL.info(f'self._published_capabilities: {self._published_capabilities}') # 已发布的功能
 
         self.register_selector_callback("_notifyOfPublishedCapabilities:", _notifyOfPublishedCapabilities)
 
@@ -228,17 +230,19 @@ class DTXServer:
     def _receiver(self):
         try:
             while self._running:
-                dtx = self._client.recv_dtx(self._cli)
+                dtx = self._client.recv_dtx(self._cli) # ios_device.util.dtx_msg.DTXMessage
+                # 30
                 if '_channelCanceled:' in str(dtx.selector):
                     self._cli.close()
+                # 30
                 if dtx.conversation_index == 1:
-                    self._reply_queues[dtx.identifier].put(dtx)
+                    self._reply_queues[dtx.identifier].put(dtx)                 # 5
                 elif (2 ** 32 - dtx.channel_code) in self._channel_callbacks:
-                    self._channel_callbacks[(2 ** 32 - dtx.channel_code)](dtx)
+                    self._channel_callbacks[(2 ** 32 - dtx.channel_code)](dtx)  # 24
                 else:
-                    selector = dtx.selector
+                    selector = dtx.selector                                     # 1
                     if isinstance(selector, str) and selector in self._callbacks:
-                        self._callbacks[selector](dtx)
+                        self._callbacks[selector](dtx)                          # 1
                     elif self._undefined_callback:
                         self._undefined_callback(dtx)
                     if dtx.expects_reply:

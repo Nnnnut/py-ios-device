@@ -29,14 +29,14 @@ class PlistService:
             ssl_file: Optional[str] = None,
             network=None
     ):
-        self.port = port
-        self.device = device
+        self.port = port # 62078
+        self.device = device # None
         if not self.device:
             with USBMux() as usb_mux:
-                self.device = usb_mux.find_device(udid, network)
+                self.device = usb_mux.find_device(udid, network) # None, None
         log.debug(f'Connecting to device: {self.device.serial}')
         self.sock = self.device.connect(port)  # type: socket
-        if ssl_file:
+        if ssl_file: # ssl_file = None
             self.ssl_start(ssl_file, ssl_file)
 
     def ssl_start(self, keyfile, certfile):
@@ -79,22 +79,24 @@ class PlistService:
         if not resp or len(resp) != 4:
             return None
         payload = self.recv_exact(struct.unpack('>L', resp)[0])
-        log.debug(f'接收 Plist byte: {payload}')
+        # log.debug(f'接收 Plist byte: {payload}')
 
         if not payload:
             return None
         if payload.startswith(b'bplist00') or payload.startswith(b'<?xml'):
             data = plistlib.loads(payload)
-            log.debug(f'接收 Plist data: {data}')
+            log.debug(f'接收 Plist: {data}')
+            log.info(f'接收 Plist: {data}')
             return data
         else:
             raise ValueError('Received invalid data: {}'.format(payload[:100].decode('hex')))
 
     def send_plist(self, data):
         log.debug(f'发送 Plist: {data}')
+        log.info(f'发送 Plist: {data}')
         payload = plistlib.dumps(data)
         payload_len = struct.pack('>L', len(payload))
-        log.debug(f'发送 Plist byte: {payload_len+payload}')
+        # log.debug(f'发送 Plist byte: {payload_len+payload}')
         return self.sock.send(payload_len + payload)
 
     def plist_request(self, request):

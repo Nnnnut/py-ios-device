@@ -7,7 +7,7 @@ class MobileImageMounter(object):
 
     SERVICE_NAME = 'com.apple.mobile.mobile_image_mounter'
 
-    def __init__(self, lockdown=None, udid=None, logger=None,service=None):
+    def __init__(self, lockdown=None, udid=None, logger=None,service=None): # (service=`LockdownClient`._start_service("com.apple.mobile.mobile_image_mounter"))
         from ..util.lockdown import LockdownClient
         self.logger = logger or logging.getLogger(__name__)
         self.lockdown = lockdown or LockdownClient(udid=udid)
@@ -44,8 +44,8 @@ class MobileImageMounter(object):
             raise Exception(ret['Error'])
 
     def mount(self,
-              image_path: str,
-              image_signature_path: str):
+              image_path: str,              # C:\Users\blue2\AppData\Local\Temp\tmprjvd8_tm\16.3\DeveloperDiskImage.dmg
+              image_signature_path: str):   # C:\Users\blue2\AppData\Local\Temp\tmprjvd8_tm\16.3\DeveloperDiskImage.dmg.signature
         """ Mount developer disk image from local files """
         assert os.path.isfile(image_path), image_path
         assert os.path.isfile(image_signature_path), image_signature_path
@@ -53,18 +53,18 @@ class MobileImageMounter(object):
         with open(image_signature_path, 'rb') as f:
             signature_content = f.read()
 
-        image_size = os.path.getsize(image_path)
+        image_size = os.path.getsize(image_path) # 返回指定文件的字节大小
 
         with open(image_path, "rb") as image_reader:
             return self.mount_fileobj(image_reader, image_size, signature_content)
 
     def mount_fileobj(self,
-                      image_reader: typing.IO,
-                      image_size: int,
-                      signature_content: bytes,
+                      image_reader: typing.IO,  # open(DeveloperDiskImage.dmg)
+                      image_size: int,          # os.path.getsize(DeveloperDiskImage.dmg)
+                      signature_content: bytes, # open(DeveloperDiskImage.dmg.signature).read()
                       image_type: str = "Developer"):
 
-        ret = self.service.plist_request({
+        ret = self.service.plist_request({ # 发送 DeveloperDiskImage.dmg.signature
             "Command": "ReceiveBytes",
             "ImageSignature": signature_content,
             "ImageSize": image_size,
@@ -75,10 +75,10 @@ class MobileImageMounter(object):
 
         # Send data through SSL
         logging.info("Pushing DeveloperDiskImage.dmg")
-        chunk_size = 1 << 14
+        chunk_size = 1 << 14 # 16384
 
-        while True:
-            chunk = image_reader.read(chunk_size)
+        while True:                                 # 发送 DeveloperDiskImage.dmg
+            chunk = image_reader.read(chunk_size)   # 一次读取最多16384 bytes
             if not chunk:
                 break
             self.service.sock.sendall(chunk)
